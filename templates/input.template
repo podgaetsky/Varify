@@ -1,0 +1,5 @@
+# Simulation input deck — @JOB_NAME@
+# Tokens @TAU@ / @GAMMA@ / @KAPPA@ are substituted per case by the framework.
+tau   = @TAU@
+gamma = @GAMMA@
+kappa = @KAPPA@

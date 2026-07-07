@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+
+# Framework runtime artifacts
+sweep_workspace/
+results/
+submission.log
+sweep_results.csv
+mcmc_chain.csv
+optimization_history.csv

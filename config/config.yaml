@@ -1,0 +1,101 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  Varify framework configuration
+#  Callables (input_fn / coupled_fn / analysis_fns) live in the hooks module
+#  below and are referenced here by function name.
+# ═══════════════════════════════════════════════════════════════════════════
+
+hooks_module: config/hooks.py
+
+# ── Scan (legacy line/grid search logic) ────────────────────────────────────
+scan:
+  mode: grid                     # grid | coupled  (1 swept param = line search)
+  workspace: sweep_workspace     # root directory for all case folders
+  template_files:                # @NAME@ tokens are substituted per case
+    - templates/input.template
+    - templates/run_script.sh
+  output_file: stdout.log        # file scraped for the result metric
+  output_regex: 'RESULT:\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)'
+  results_csv: sweep_results.csv
+  submission_log: submission.log
+
+# ── Parameters: sweep axes, static defaults, couplings and MCMC priors ─────
+#   sweep:  values: [..]  OR  start/stop/num (+ log_scale)  — omit to keep static
+#   mcmc :  prior_low/prior_high (hard bounds; also used as optimizer bounds),
+#           init_center/init_width (initial walker scatter)
+parameters:
+  - name: tau
+    default: 1.0
+    sweep: {start: 0.5, stop: 5.0, num: 10, log_scale: false}
+    input_fn: tau_input_fn
+    mcmc: {prior_low: 0.0, prior_high: 10.0, init_center: 1.0, init_width: 0.5}
+
+  - name: gamma
+    default: 0.5
+    sweep: {start: 0.1, stop: 2.0, num: 5, log_scale: false}
+    mcmc: {prior_low: 0.0, prior_high: 5.0, init_center: 0.5, init_width: 0.2}
+
+  - name: kappa                  # static, rides along with tau (not swept/MCMC)
+    default: 1.0
+    coupled_to: tau
+    coupled_fn: kappa_from_tau
+
+# ── SLURM directives & command templates ────────────────────────────────────
+#   Placeholders in submit_cmd: {job_name} {case_dir} {param_<name>} {directives}
+slurm:
+  submit_cmd: "sbatch --job-name={job_name} --output=stdout.log --error=stderr.log {directives} run_script.sh"
+  directives:
+    partition: compute
+    time: "04:00:00"
+    ntasks: 1
+    # mem: 4G
+    # account: my_account
+  cancel_cmd: "scancel {job_id}"
+  status_cmd: "squeue -h -j {job_id} -o %T"
+  submit_timeout: 30.0
+
+# ── MCMC (ensemble stretch-move sampler) ────────────────────────────────────
+mcmc:
+  log_prob_regex: 'LOG_PROB:\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)'
+  num_walkers: 10                # ≥ 2 × number of MCMC params, even
+  num_iters: 500                 # chain steps per walker after burn-in
+  burnin: 100
+  stretch_a: 2.0                 # emcee stretch-move scale parameter
+  poll_interval: 30.0            # seconds between completion polls
+  job_timeout: 3600.0            # seconds before a walker job is declared failed
+  use_dependency: false          # sbatch --dependency=afterok chains (SLURM only)
+  chain_csv: mcmc_chain.csv
+
+# ── Gradient-free optimizer (Nelder-Mead) ───────────────────────────────────
+optimizer:
+  method: nelder-mead
+  maximize: false                # false = minimize the parsed metric
+  max_evaluations: 100
+  tolerance: 1.0e-4
+  objective_regex: null          # null → use scan.output_regex
+  poll_interval: 30.0
+  job_timeout: 3600.0
+  history_csv: optimization_history.csv
+
+# ── Watchdog daemon ─────────────────────────────────────────────────────────
+watchdog:
+  poll_interval: 60.0            # seconds between polling cycles
+  stall_timeout: 1800.0          # no file modification for this long → stalled
+  nan_regex: '(?i)\bnan\b'       # NaN detector applied to the log files
+  log_files: [stdout.log, stderr.log]
+  status_csv: status.csv         # central failure log (relative → workspace)
+  max_resubmits: 2               # 0 disables automatic resubmission
+  resubmit_scaling:              # params multiplied by factor on resubmission
+    tau: 0.5                     # e.g. halve the timestep-like parameter
+  agent_directives:              # extra #SBATCH lines for --deploy-agent
+    partition: compute
+    time: "24:00:00"
+
+# ── Analysis & plotting ─────────────────────────────────────────────────────
+analysis:
+  plots_dir: results/plots
+  sqlite_db: results/results.db
+  sqlite_table: results
+  analysis_fns:
+    - example_row_analysis
+    - example_frame_analysis
+    - example_sensitivity
