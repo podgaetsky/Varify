@@ -41,6 +41,33 @@ Varify/
 └── results/plots/              # Auto-generated figures (created on demand)
 ```
 
+### Compute & automation layer (zero-dependency)
+
+Alongside the config-driven orchestrator above, the repository ships a
+standard-library-only compute layer:
+
+```
+├── sbatch_template.sh          # @TOKEN@-driven SLURM dispatch shell (cluster portability)
+├── utils/
+│   ├── io_handlers.py          # encoding-fallback readers, atomic writes, comment-
+│   │                           #   preserving in-place JSON/YAML/TOML value mutation
+│   └── diagnostics.py          # Slurm log post-mortem: OOM/timeout/segfault/NaN flags
+│                               #   + wall-time & throughput profiling
+├── runner/                     # agnostic workflow runner
+│   ├── core.py                 # RunSpec lifecycle; strategy + runtime are single strings
+│   ├── strategies.py           # optimize / grid / mcmc / mcmc_diagnostic / benchmark
+│   ├── checkpoint.py           # SIGTERM/USR1 wall-time trap + atomic resumable state
+│   ├── preflight.py            # environment/config validator (runs before allocation)
+│   └── provenance.py           # immutable git/seed/env/timestamp record in every payload
+└── examples/                   # 5 standalone blueprint workflows → timestamped results/
+```
+
+Every workflow declares a `RunSpec`; swapping the algorithm
+(`strategy="mcmc"`) or the execution target (`runtime="slurm"`, which
+self-submits via `sbatch_template.sh`) is a one-string change.  scipy /
+emcee / numpy / matplotlib are optional upgrades — pure-Python fallbacks
+keep the layer dependency-free.  See `examples/README.md`.
+
 **Data flow.** Every mode reads `config/config.yaml`. *Scan* enumerates the
 parameter space, renders one case directory per point from `templates/` and
 fires one SLURM job each. *Optimize* (Nelder-Mead or MCMC) closes the loop:
