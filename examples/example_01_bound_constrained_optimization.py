@@ -15,7 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from runner import RunSpec, WorkflowRunner  # noqa: E402
+from varify.runner import RunSpec, WorkflowRunner  # noqa: E402
 
 
 def rosenbrock(x: float, y: float) -> float:

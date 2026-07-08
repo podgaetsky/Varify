@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import numpy as np
 import pandas as pd
 
-from src.analysis.plotting import PlotSuite  # noqa: E402
+from varify.src.analysis.plotting import PlotSuite  # noqa: E402
 
 
 def _damped_sine(x: np.ndarray, amp: float = 1.0, decay: float = 0.15,

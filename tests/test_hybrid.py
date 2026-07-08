@@ -17,8 +17,8 @@ from unittest import mock
 import numpy as np
 import pytest
 
-from src.common.params import ParamSpec
-from src.optimizer.hybrid import HybridDEOptimizer, _PENALTY
+from varify.src.common.params import ParamSpec
+from varify.src.optimizer.hybrid import HybridDEOptimizer, _PENALTY
 
 _LOW, _HIGH = -2.0, 2.0
 

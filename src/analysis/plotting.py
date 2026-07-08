@@ -37,9 +37,9 @@ try:
 except ImportError:
     _CORNER_AVAILABLE = False
 
-from src.analysis.diagnostics import autocorr_time, gelman_rubin
-from src.analysis.postprocess import fit_spline, load_xy, spline_mse
-from src.common.config import FrameworkConfig
+from varify.src.analysis.diagnostics import autocorr_time, gelman_rubin
+from varify.src.analysis.postprocess import fit_spline, load_xy, spline_mse
+from varify.src.common.config import FrameworkConfig
 
 
 class PlotSuite:

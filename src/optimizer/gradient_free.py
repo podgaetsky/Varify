@@ -20,9 +20,9 @@ import numpy as np
 import pandas as pd
 from scipy import optimize
 
-from src.common.config import FrameworkConfig
-from src.optimizer.base import BaseOptimizer
-from src.slurm.dispatcher import SlurmDispatcher
+from varify.src.common.config import FrameworkConfig
+from varify.src.optimizer.base import BaseOptimizer
+from varify.src.slurm.dispatcher import SlurmDispatcher
 
 _PENALTY: float = 1.0e30
 

@@ -21,9 +21,9 @@ from unittest import mock
 
 import pytest
 
-from runner import strategies  # noqa: F401  (registers built-in strategies)
-from runner.checkpoint import CheckpointManager
-from runner.core import RunContext, RunSpec, _wait_for_slurm_job
+from varify.runner import strategies  # noqa: F401  (registers built-in strategies)
+from varify.runner.checkpoint import CheckpointManager
+from varify.runner.core import RunContext, RunSpec, _wait_for_slurm_job
 
 _LOW_X, _HIGH_X = -2.0, 2.0
 _LOW_Y, _HIGH_Y = -1.0, 3.0

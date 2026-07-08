@@ -11,7 +11,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from utils.file_pipeline import (
+from varify.utils.file_pipeline import (
     apply_pipeline,
     generate_config_file,
     main,

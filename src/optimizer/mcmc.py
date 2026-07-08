@@ -24,11 +24,11 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from src.analysis.diagnostics import autocorr_time, gelman_rubin
-from src.common.config import FrameworkConfig
-from src.common.params import MCMCStep
-from src.optimizer.base import BaseOptimizer
-from src.slurm.dispatcher import SlurmDispatcher
+from varify.src.analysis.diagnostics import autocorr_time, gelman_rubin
+from varify.src.common.config import FrameworkConfig
+from varify.src.common.params import MCMCStep
+from varify.src.optimizer.base import BaseOptimizer
+from varify.src.slurm.dispatcher import SlurmDispatcher
 
 
 class MCMCOptimizer(BaseOptimizer):

@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.analysis.plotting import PlotSuite
+from varify.src.analysis.plotting import PlotSuite
 
 
 def _write_xy(path: Path, x, y) -> None:

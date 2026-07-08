@@ -1,9 +1,9 @@
 """Gradient-free optimization and MCMC sampling over SLURM-executed simulations."""
 
-from src.optimizer.base import BaseOptimizer
-from src.optimizer.gradient_free import NelderMeadOptimizer
-from src.optimizer.hybrid import HybridDEOptimizer
-from src.optimizer.mcmc import MCMCOptimizer
+from varify.src.optimizer.base import BaseOptimizer
+from varify.src.optimizer.gradient_free import NelderMeadOptimizer
+from varify.src.optimizer.hybrid import HybridDEOptimizer
+from varify.src.optimizer.mcmc import MCMCOptimizer
 
 __all__ = [
     "BaseOptimizer", "NelderMeadOptimizer", "HybridDEOptimizer", "MCMCOptimizer",

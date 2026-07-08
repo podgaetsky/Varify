@@ -30,7 +30,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from utils.io_handlers import write_atomic
+from varify.utils.io_handlers import write_atomic
 
 _ENV_WHITELIST = re.compile(
     r"^(SLURM_|PBS_|LSB_|OMP_|MKL_|OPENBLAS_|NUMEXPR_"

@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Tuple
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    from runner.core import RunSpec
+    from varify.runner.core import RunSpec
 
 PASS, WARN, FAIL = "PASS", "WARN", "FAIL"
 

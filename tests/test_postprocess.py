@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from src.analysis.postprocess import fit_spline, load_xy, spline_mse
+from varify.src.analysis.postprocess import fit_spline, load_xy, spline_mse
 
 
 def _write_xy(path: Path, xs, ys, delimiter: str = " ", header: bool = True) -> None:

@@ -13,7 +13,7 @@ import types
 from pathlib import Path
 from unittest import mock
 
-from src.slurm.dispatcher import SlurmDispatcher
+from varify.src.slurm.dispatcher import SlurmDispatcher
 
 
 class _Result:

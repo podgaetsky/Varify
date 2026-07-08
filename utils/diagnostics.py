@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 
-from utils.io_handlers import read_text_safe
+from varify.utils.io_handlers import read_text_safe
 
 # ── Failure signature catalog ─────────────────────────────────────────────────
 

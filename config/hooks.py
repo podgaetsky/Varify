@@ -23,7 +23,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from utils.file_pipeline import generate_config_file
+from varify.utils.file_pipeline import generate_config_file
 
 
 # ── input_fn hooks ────────────────────────────────────────────────────────────

@@ -22,9 +22,9 @@ import numpy as np
 import pandas as pd
 from scipy import optimize
 
-from src.common.config import FrameworkConfig
-from src.optimizer.gradient_free import NelderMeadOptimizer, _PENALTY
-from src.slurm.dispatcher import SlurmDispatcher
+from varify.src.common.config import FrameworkConfig
+from varify.src.optimizer.gradient_free import NelderMeadOptimizer, _PENALTY
+from varify.src.slurm.dispatcher import SlurmDispatcher
 
 
 class HybridDEOptimizer(NelderMeadOptimizer):

@@ -54,7 +54,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Union
 
-from utils.io_handlers import update_config_value, write_atomic
+from varify.utils.io_handlers import update_config_value, write_atomic
 
 log = logging.getLogger("varify.file_pipeline")
 

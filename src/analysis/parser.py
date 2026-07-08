@@ -19,8 +19,8 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
-from src.common.config import FrameworkConfig
-from src.scanner.base import Scanner
+from varify.src.common.config import FrameworkConfig
+from varify.src.scanner.base import Scanner
 
 
 class ResultParser:

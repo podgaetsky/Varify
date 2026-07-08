@@ -15,9 +15,9 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Dict, Iterator, List, Tuple
 
-from src.common.casebuilder import CaseBuilder
-from src.common.config import FrameworkConfig
-from src.common.params import GridPoint, ParamSpec
+from varify.src.common.casebuilder import CaseBuilder
+from varify.src.common.config import FrameworkConfig
+from varify.src.common.params import GridPoint, ParamSpec
 
 
 class Scanner(ABC):

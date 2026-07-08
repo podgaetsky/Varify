@@ -22,8 +22,8 @@ import os
 from pathlib import Path
 from typing import Any, Dict
 
-from src.common.config import FrameworkConfig
-from utils.file_pipeline import apply_pipeline
+from varify.src.common.config import FrameworkConfig
+from varify.utils.file_pipeline import apply_pipeline
 
 
 class CaseBuilder:

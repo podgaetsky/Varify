@@ -29,12 +29,12 @@ import sys
 from pathlib import Path
 from typing import List, Optional, Sequence
 
-from src.analysis import AnalysisDispatcher, PlotSuite, ResultParser
-from src.common.config import FrameworkConfig, load_config
-from src.optimizer import make_optimizer
-from src.scanner import make_scanner
-from src.slurm.dispatcher import SlurmDispatcher
-from src.slurm.watchdog import Watchdog, deploy_as_agent
+from varify.src.analysis import AnalysisDispatcher, PlotSuite, ResultParser
+from varify.src.common.config import FrameworkConfig, load_config
+from varify.src.optimizer import make_optimizer
+from varify.src.scanner import make_scanner
+from varify.src.slurm.dispatcher import SlurmDispatcher
+from varify.src.slurm.watchdog import Watchdog, deploy_as_agent
 
 
 def _setup_logging(verbose: bool = False) -> logging.Logger:

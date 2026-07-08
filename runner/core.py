@@ -37,10 +37,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
-from runner.checkpoint import CheckpointManager
-from runner.preflight import PreflightReport, run_preflight
-from runner.provenance import capture_provenance, write_provenance
-from utils.io_handlers import read_text_safe, write_atomic
+from varify.runner.checkpoint import CheckpointManager
+from varify.runner.preflight import PreflightReport, run_preflight
+from varify.runner.provenance import capture_provenance, write_provenance
+from varify.utils.io_handlers import read_text_safe, write_atomic
 
 log = logging.getLogger("varify.runner")
 

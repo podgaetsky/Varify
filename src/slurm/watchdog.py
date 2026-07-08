@@ -37,10 +37,10 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
-from src.common.casebuilder import CaseBuilder
-from src.common.config import FrameworkConfig, load_config
-from src.slurm.dispatcher import SlurmDispatcher
-from src.slurm.registry import JobRegistry
+from varify.src.common.casebuilder import CaseBuilder
+from varify.src.common.config import FrameworkConfig, load_config
+from varify.src.slurm.dispatcher import SlurmDispatcher
+from varify.src.slurm.registry import JobRegistry
 
 _STATUS_COLUMNS = [
     "timestamp", "iso_time", "job_id", "job_name",

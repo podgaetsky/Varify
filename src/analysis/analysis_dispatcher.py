@@ -16,7 +16,7 @@ from typing import Any, Callable, Dict, List
 
 import pandas as pd
 
-from src.common.config import FrameworkConfig
+from varify.src.common.config import FrameworkConfig
 
 
 class AnalysisDispatcher:

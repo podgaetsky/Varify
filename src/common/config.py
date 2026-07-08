@@ -22,7 +22,7 @@ from typing import Any, Callable, Dict, List, Optional
 import numpy as np
 import yaml
 
-from src.common.params import ParamSpec
+from varify.src.common.params import ParamSpec
 
 log = logging.getLogger("varify.config")
 

@@ -43,8 +43,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from src.common.config import FrameworkConfig
-from src.slurm.registry import JobRegistry
+from varify.src.common.config import FrameworkConfig
+from varify.src.slurm.registry import JobRegistry
 
 
 class SlurmDispatcher:

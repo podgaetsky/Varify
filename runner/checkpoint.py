@@ -20,7 +20,7 @@ from pathlib import Path
 from types import FrameType, TracebackType
 from typing import Any, Dict, Optional, Type
 
-from utils.io_handlers import read_text_safe, write_atomic
+from varify.utils.io_handlers import read_text_safe, write_atomic
 
 _TRAPPED_SIGNALS = (signal.SIGTERM, signal.SIGUSR1, signal.SIGINT)
 

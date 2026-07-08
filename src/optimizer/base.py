@@ -20,11 +20,11 @@ from typing import Dict, Optional, Tuple
 
 import pandas as pd
 
-from src.common.casebuilder import CaseBuilder
-from src.common.config import FrameworkConfig
-from src.analysis.parser import ResultParser
-from src.analysis.postprocess import spline_mse
-from src.slurm.dispatcher import SlurmDispatcher
+from varify.src.common.casebuilder import CaseBuilder
+from varify.src.common.config import FrameworkConfig
+from varify.src.analysis.parser import ResultParser
+from varify.src.analysis.postprocess import spline_mse
+from varify.src.slurm.dispatcher import SlurmDispatcher
 
 
 class BaseOptimizer(ABC):

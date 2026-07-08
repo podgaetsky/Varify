@@ -17,9 +17,9 @@ from typing import Iterator
 
 import numpy as np
 
-from src.common.config import FrameworkConfig
-from src.common.params import GridPoint
-from src.scanner.base import Scanner
+from varify.src.common.config import FrameworkConfig
+from varify.src.common.params import GridPoint
+from varify.src.scanner.base import Scanner
 
 
 class GridScanner(Scanner):

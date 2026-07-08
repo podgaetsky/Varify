@@ -31,7 +31,7 @@ import statistics
 import time
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
-from runner.core import RunContext, register_strategy
+from varify.runner.core import RunContext, register_strategy
 
 _PENALTY = 1.0e300
 

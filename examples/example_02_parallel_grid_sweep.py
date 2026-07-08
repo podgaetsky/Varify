@@ -18,7 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from runner import RunSpec, WorkflowRunner  # noqa: E402
+from varify.runner import RunSpec, WorkflowRunner  # noqa: E402
 
 
 def damped_response(frequency: float, damping: float) -> float:
