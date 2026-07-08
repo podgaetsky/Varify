@@ -23,6 +23,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from utils.file_pipeline import generate_config_file
+
 
 # ── input_fn hooks ────────────────────────────────────────────────────────────
 
@@ -32,6 +34,19 @@ def tau_input_fn(case_dir: Path, value: float, **params: Any) -> None:
     sidecar.write_text(
         json.dumps({"tau": value, "all_params": params}, indent=2),
         encoding="utf-8",
+    )
+
+
+def gamma_input_fn(case_dir: Path, value: float, **params: Any) -> None:
+    """Example input_fn calling utils.file_pipeline directly (as an
+    alternative to declaring a "generate" entry in config.yaml's
+    file_pipeline: section — useful when the file content needs logic
+    beyond simple "$param" substitution).
+    """
+    generate_config_file(
+        case_dir / "gamma_meta.json",
+        {"gamma": value, "all_params": params},
+        fmt="json",
     )
 
 

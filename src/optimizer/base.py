@@ -23,6 +23,7 @@ import pandas as pd
 from src.common.casebuilder import CaseBuilder
 from src.common.config import FrameworkConfig
 from src.analysis.parser import ResultParser
+from src.analysis.postprocess import spline_mse
 from src.slurm.dispatcher import SlurmDispatcher
 
 
@@ -58,14 +59,59 @@ class BaseOptimizer(ABC):
         regex: str,
         timeout: float,
         poll_interval: float,
+        job_id: Optional[str] = None,
+        dispatcher: Optional[SlurmDispatcher] = None,
     ) -> float:
         """Block until the output file appears, then parse the metric (NaN on
-        timeout or parse failure)."""
+        timeout or parse failure).
+
+        If both *job_id* and *dispatcher* are given, first block on the
+        scheduler's own completion state via
+        :meth:`SlurmDispatcher.wait_for_completion`; a non-COMPLETED
+        terminal state (or scheduler timeout) short-circuits to NaN without
+        bothering to poll for the output file. Omitting either argument
+        preserves the previous output-file-only behavior.
+
+        When ``cfg.optimizer.postprocess`` is enabled, the metric is instead
+        the spline-interpolated MSE against the configured experimental
+        dataset (see :meth:`_postprocess_case`) rather than a regex-parsed
+        scalar. That metric is an error — lower is better — which composes
+        naturally with the ``maximize: false`` default.
+        """
+        if job_id is not None and dispatcher is not None:
+            ok = dispatcher.wait_for_completion(job_id, timeout, poll_interval)
+            if not ok:
+                self._log.warning(
+                    "Job %s did not complete for %s", job_id, case_dir.name,
+                )
+                return float("nan")
         ok = self.parser.wait_for_output(case_dir, timeout, poll_interval)
         if not ok:
             self._log.warning("Timed out waiting for output in %s", case_dir.name)
             return float("nan")
+        if self.cfg.optimizer.postprocess:
+            return self._postprocess_case(case_dir)
         return self.parser.parse_case(case_dir, regex=regex)
+
+    def _postprocess_case(self, case_dir: Path) -> float:
+        """Score *case_dir* via spline-interpolated MSE against experiment.
+
+        Returns NaN (with a logged error) if no ``experimental_data`` path
+        is configured.
+        """
+        if self.cfg.optimizer.experimental_data is None:
+            self._log.error(
+                "postprocess is enabled but optimizer.experimental_data is "
+                "not set; returning NaN for %s", case_dir.name,
+            )
+            return float("nan")
+        return spline_mse(
+            case_dir,
+            self.cfg.optimizer.experimental_data,
+            self.cfg.optimizer.sim_output_file,
+            k=self.cfg.optimizer.spline_k,
+            s=self.cfg.optimizer.spline_s,
+        )
 
     # ── Strategy (subclass responsibility) ────────────────────────────────────
 

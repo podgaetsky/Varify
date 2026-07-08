@@ -10,6 +10,8 @@ The behaviour is unchanged:
 * ``*.sh`` templates (or templates already executable) are made executable.
 * Each param's ``input_fn(case_dir, value, **selected_params)`` is invoked
   with keyword arguments filtered by signature introspection.
+* If ``cfg.file_pipeline`` is non-empty, ``utils.file_pipeline.apply_pipeline``
+  runs it last, generating/modifying extra files declared in the YAML config.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from src.common.config import FrameworkConfig
+from utils.file_pipeline import apply_pipeline
 
 
 class CaseBuilder:
@@ -97,5 +100,7 @@ class CaseBuilder:
         smap = self.substitution_map(params, job_name)
         self._render_templates(case_dir, smap)
         self._run_input_fns(case_dir, params)
+        if self.cfg.file_pipeline:
+            apply_pipeline(case_dir, params, self.cfg.file_pipeline)
         self._log.debug("Prepared: %s", case_dir)
         return case_dir

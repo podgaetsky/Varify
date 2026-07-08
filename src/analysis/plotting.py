@@ -38,6 +38,7 @@ except ImportError:
     _CORNER_AVAILABLE = False
 
 from src.analysis.diagnostics import autocorr_time, gelman_rubin
+from src.analysis.postprocess import fit_spline, load_xy, spline_mse
 from src.common.config import FrameworkConfig
 
 
@@ -411,6 +412,114 @@ class PlotSuite:
         ax.grid(True, alpha=0.4)
         fig.tight_layout()
         self._save(fig, "optimization_convergence.png")
+
+    # ── Post-processing overlays (spline vs. experiment) ────────────────────────
+
+    def plot_overlay(
+        self,
+        case_dir: Path,
+        experimental_path: Path,
+        sim_filename: str,
+        name: str = "overlay",
+    ) -> None:
+        """Scatter experimental data against raw + spline-fit simulated curves."""
+        case_dir = Path(case_dir)
+        experimental_path = Path(experimental_path)
+        sim_path = case_dir / sim_filename
+        if not sim_path.exists() or not experimental_path.exists():
+            self._log.warning(
+                "Overlay input missing: sim=%s exp=%s", sim_path, experimental_path,
+            )
+            return
+        x_sim, y_sim = load_xy(sim_path)
+        x_exp, y_exp = load_xy(experimental_path)
+        if (
+            x_sim.size == 0 or x_exp.size == 0
+            or not np.isfinite(y_sim).any() or not np.isfinite(y_exp).any()
+        ):
+            self._log.warning("No valid overlay data for %s.", name)
+            return
+
+        fig, ax = plt.subplots(figsize=(9, 5.5))
+        ax.scatter(
+            x_exp, y_exp, s=26, color="#2ca02c", alpha=0.8, zorder=3,
+            label="experimental",
+        )
+        ax.plot(
+            x_sim, y_sim, "-", lw=1, marker="o", ms=3, color="#1f77b4", alpha=0.7,
+            label="simulated (raw)",
+        )
+
+        lo = max(x_sim.min(), x_exp.min())
+        hi = min(x_sim.max(), x_exp.max())
+        if hi > lo and x_sim.size >= 2:
+            spline = fit_spline(
+                x_sim, y_sim,
+                k=self.cfg.optimizer.spline_k, s=self.cfg.optimizer.spline_s,
+            )
+            x_dense = np.linspace(lo, hi, 300)
+            ax.plot(
+                x_dense, spline(x_dense), "-", lw=2, color="#d62728",
+                label="simulated (spline)",
+            )
+
+        mse = spline_mse(
+            case_dir, experimental_path, sim_filename,
+            k=self.cfg.optimizer.spline_k, s=self.cfg.optimizer.spline_s,
+        )
+        ax.text(
+            0.98, 0.02, f"MSE = {mse:.4g}", transform=ax.transAxes,
+            ha="right", va="bottom", fontsize=10,
+            bbox=dict(boxstyle="round", facecolor="white", alpha=0.85),
+        )
+        ax.set_xlabel("x", fontsize=12)
+        ax.set_ylabel("y", fontsize=12)
+        ax.set_title(
+            "Simulated vs. experimental overlay", fontsize=14, fontweight="bold",
+        )
+        ax.legend(framealpha=0.85)
+        ax.grid(True, alpha=0.4)
+        fig.tight_layout()
+        self._save(fig, f"{name}.png")
+
+    def plot_postprocess(
+        self, history_df: pd.DataFrame, best_case_dir: Optional[Path] = None,
+    ) -> None:
+        """MSE-per-evaluation convergence, plus optional best-fit overlay."""
+        if history_df.empty or "objective" not in history_df.columns:
+            self._log.warning("No post-processing history to plot.")
+            return
+        y = history_df["objective"].to_numpy(float)
+        finite = np.isfinite(y)
+        if not finite.any():
+            self._log.warning("No finite post-processing objective values to plot.")
+            return
+        x = np.arange(1, len(y) + 1)
+        best = np.fmin.accumulate(np.where(finite, y, np.inf))
+
+        fig, (ax0, ax1) = plt.subplots(2, 1, figsize=(9, 8.5))
+        ax0.semilogy(x[finite], y[finite], "o", ms=4, alpha=0.6, color="#1f77b4")
+        ax0.set_xlabel("Evaluation #", fontsize=11)
+        ax0.set_ylabel("MSE (log scale)", fontsize=11)
+        ax0.set_title("Post-processing MSE per evaluation", fontsize=13, fontweight="bold")
+        ax0.grid(True, alpha=0.4)
+
+        ax1.step(x, best, where="post", lw=2, color="#d62728")
+        ax1.set_xlabel("Evaluation #", fontsize=11)
+        ax1.set_ylabel("Running-best MSE", fontsize=11)
+        ax1.set_title("Running best", fontsize=13, fontweight="bold")
+        ax1.grid(True, alpha=0.4)
+
+        fig.tight_layout()
+        self._save(fig, "postprocess_convergence.png")
+
+        if best_case_dir is not None and self.cfg.optimizer.experimental_data:
+            self.plot_overlay(
+                best_case_dir,
+                self.cfg.optimizer.experimental_data,
+                self.cfg.optimizer.sim_output_file,
+                name="overlay_best",
+            )
 
     # ── Dispatch ─────────────────────────────────────────────────────────────
 

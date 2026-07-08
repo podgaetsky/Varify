@@ -29,6 +29,7 @@ import csv
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 import time
@@ -67,6 +68,76 @@ def available_strategies() -> List[str]:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
+#  SLURM completion polling (stdlib only — squeue/sacct subprocess calls)
+# ═════════════════════════════════════════════════════════════════════════════
+
+_SLURM_JOB_ID_RE = re.compile(r"Submitted batch job (\d+)")
+_SLURM_TERMINAL_STATES = {
+    "COMPLETED", "FAILED", "CANCELLED", "TIMEOUT", "NODE_FAIL",
+    "PREEMPTED", "OUT_OF_MEMORY", "BOOT_FAIL", "DEADLINE",
+}
+
+
+def _parse_slurm_job_id(sbatch_stdout: str) -> Optional[str]:
+    """Extract the job id from ``sbatch``'s "Submitted batch job N" line."""
+    match = _SLURM_JOB_ID_RE.search(sbatch_stdout)
+    return match.group(1) if match else None
+
+
+def _slurm_job_state(job_id: str) -> str:
+    """Current SLURM state of *job_id* (e.g. ``RUNNING``, ``COMPLETED``).
+
+    Polls ``squeue`` first — authoritative while the job is still queued or
+    running.  Once the job has left the queue (empty ``squeue`` output),
+    falls back to ``sacct`` for its terminal state.  If ``sacct`` itself is
+    unavailable (nonzero return code or missing binary), a job absent from
+    the queue is treated as ``COMPLETED`` — the best inference available
+    without accounting data.
+    """
+    result = subprocess.run(
+        ["squeue", "-h", "-j", job_id, "-o", "%T"],
+        capture_output=True, text=True, timeout=30,
+    )
+    state = result.stdout.strip()
+    if state:
+        return state
+
+    try:
+        sacct = subprocess.run(
+            ["sacct", "-j", job_id, "-n", "-o", "State", "-X"],
+            capture_output=True, text=True, timeout=30,
+        )
+    except FileNotFoundError:
+        return "COMPLETED"
+    if sacct.returncode != 0:
+        return "COMPLETED"
+    out = sacct.stdout.strip()
+    return out.split()[0] if out else "COMPLETED"
+
+
+def _wait_for_slurm_job(
+    job_id: str, timeout: float = 3600.0, poll_interval: float = 30.0,
+) -> bool:
+    """Block until *job_id* reaches a terminal SLURM state.
+
+    Returns True iff the job's terminal state is ``COMPLETED``; False for
+    any other terminal state (``FAILED``, ``CANCELLED``, ...) or if
+    *timeout* elapses first. Pure ``squeue``/``sacct`` polling — no
+    scheduler client library required.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        state = _slurm_job_state(job_id).upper()
+        if state == "COMPLETED":
+            return True
+        if state in _SLURM_TERMINAL_STATES:
+            return False
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(poll_interval)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
 #  Declarative run specification
 # ═════════════════════════════════════════════════════════════════════════════
 
@@ -83,6 +154,9 @@ class RunSpec:
     runtime: str = "local"                      # "local" | "slurm"
     results_root: Path = Path("results")
     slurm: Dict[str, Any] = field(default_factory=dict)
+    wait: bool = False                # block on SLURM job completion?
+    wait_timeout: float = 3600.0      # max seconds to poll before giving up
+    wait_poll: float = 30.0           # seconds between squeue/sacct polls
 
     def sbatch_template(self) -> Path:
         """The dispatch template: explicit override or the repo-root default."""
@@ -246,6 +320,7 @@ class WorkflowRunner:
         result = subprocess.run(
             ["sbatch", str(script)], capture_output=True, text=True, timeout=30,
         )
+        job_id = _parse_slurm_job_id(result.stdout)
         submission = {
             "mode": "slurm_submission",
             "run_dir": str(run_dir),
@@ -253,12 +328,24 @@ class WorkflowRunner:
             "returncode": result.returncode,
             "stdout": result.stdout.strip(),
             "stderr": result.stderr.strip(),
+            "job_id": job_id,
         }
         write_atomic(run_dir / "submission.json",
                      json.dumps(submission, indent=2))
         if result.returncode != 0:
             raise RuntimeError(f"sbatch failed: {result.stderr.strip()}")
         log.info("Submitted to SLURM: %s", result.stdout.strip())
+
+        if self.spec.wait and job_id is not None:
+            completed = _wait_for_slurm_job(
+                job_id, timeout=self.spec.wait_timeout,
+                poll_interval=self.spec.wait_poll,
+            )
+            submission["slurm_wait"] = {"job_id": job_id, "completed": completed}
+            log.info("SLURM job %s %s", job_id,
+                      "completed" if completed else "did not complete")
+            write_atomic(run_dir / "submission.json",
+                         json.dumps(submission, indent=2))
         return submission
 
     # ── Main lifecycle ────────────────────────────────────────────────────────

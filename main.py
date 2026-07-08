@@ -27,7 +27,7 @@ import argparse
 import logging
 import sys
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import List, Optional, Sequence
 
 from src.analysis import AnalysisDispatcher, PlotSuite, ResultParser
 from src.common.config import FrameworkConfig, load_config
@@ -50,14 +50,17 @@ def _setup_logging(verbose: bool = False) -> logging.Logger:
 #  Mode handlers
 # ═════════════════════════════════════════════════════════════════════════════
 
-def run_scan(cfg: FrameworkConfig, dry_run: bool, log: logging.Logger) -> None:
+def run_scan(
+    cfg: FrameworkConfig, dry_run: bool, wait: bool, log: logging.Logger,
+) -> None:
     scanner = make_scanner(cfg)
     total = scanner.total_points()
     log.info(
-        "Scan: mode=%s  swept=%s  total=%d  dry_run=%s",
-        cfg.sweep_mode, cfg.swept_names or ["(none)"], total, dry_run,
+        "Scan: mode=%s  swept=%s  total=%d  dry_run=%s  wait=%s",
+        cfg.sweep_mode, cfg.swept_names or ["(none)"], total, dry_run, wait,
     )
     submitted = errors = 0
+    job_ids: List[str] = []
     with SlurmDispatcher(cfg, dry_run=dry_run) as dispatcher:
         for i, gp in enumerate(scanner.iter_points(), 1):
             log.info("[%d/%d] %s", i, total, gp.case_dir_name)
@@ -65,8 +68,27 @@ def run_scan(cfg: FrameworkConfig, dry_run: bool, log: logging.Logger) -> None:
             job_id = dispatcher.dispatch(gp.job_name, case_dir, gp.params)
             if job_id is not None:
                 submitted += 1
+                job_ids.append(job_id)
             else:
                 errors += 1
+
+        if wait:
+            waitable = [jid for jid in job_ids if jid != "DRY_RUN"]
+            if waitable:
+                log.info("Waiting for %d submitted job(s) to complete…",
+                          len(waitable))
+                results = dispatcher.wait_for_batch(
+                    waitable,
+                    timeout=cfg.optimizer.job_timeout,
+                    poll_interval=cfg.optimizer.poll_interval,
+                )
+                completed = sum(1 for ok in results.values() if ok)
+                failed = len(results) - completed
+                log.info("Batch complete: %d completed, %d failed/timed out",
+                          completed, failed)
+            else:
+                log.info("Nothing to wait for (dry-run or no jobs submitted).")
+
     log.info("Done: %d submitted, %d errors", submitted, errors)
 
 
@@ -127,6 +149,17 @@ def run_analyze(
             parser.to_sqlite(hist_df, table="optimization_history")
         if plotter is not None:
             plotter.plot_optimization(hist_df)
+            if cfg.optimizer.postprocess:
+                valid_obj = hist_df["objective"].dropna()
+                if not valid_obj.empty:
+                    best_row = hist_df.loc[valid_obj.astype(float).idxmin()]
+                    case_dir_val = best_row.get("case_dir", "")
+                    best_case_dir = (
+                        Path(case_dir_val)
+                        if isinstance(case_dir_val, str) and case_dir_val
+                        else None
+                    )
+                    plotter.plot_postprocess(hist_df, best_case_dir=best_case_dir)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -153,8 +186,12 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
                         help="Prepare everything but do NOT call the scheduler.")
     parser.add_argument("--verbose", action="store_true",
                         help="Enable DEBUG-level logging.")
+    # scan
+    parser.add_argument("--wait", action="store_true",
+                        help="[scan] block until all submitted jobs reach a "
+                             "terminal state before exiting.")
     # optimize
-    parser.add_argument("--method", choices=["mcmc", "nelder-mead"],
+    parser.add_argument("--method", choices=["mcmc", "nelder-mead", "de-nm"],
                         default=None,
                         help="[optimize] override optimizer.method from config.")
     # watch
@@ -179,7 +216,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     cfg = load_config(args.config)
 
     if args.mode == "scan":
-        run_scan(cfg, args.dry_run, log)
+        run_scan(cfg, args.dry_run, args.wait, log)
     elif args.mode == "optimize":
         run_optimize(cfg, args.method, args.dry_run, log)
     elif args.mode == "watch":

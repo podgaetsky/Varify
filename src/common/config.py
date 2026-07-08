@@ -49,6 +49,7 @@ class SlurmSettings:
     directives: Dict[str, str] = field(default_factory=dict)
     cancel_cmd: str = "scancel {job_id}"
     status_cmd: str = "squeue -h -j {job_id} -o %T"
+    sacct_cmd: str = "sacct -j {job_id} -n -o State -X"
     submit_timeout: float = 30.0
 
     @property
@@ -95,6 +96,17 @@ class OptimizerSettings:
     poll_interval: float = 30.0
     job_timeout: float = 3600.0
     history_csv: Path = Path("optimization_history.csv")
+    postprocess: bool = False
+    experimental_data: Optional[Path] = None
+    sim_output_file: str = "output.dat"
+    spline_k: int = 3
+    spline_s: float = 0.0
+    de_popsize: int = 15
+    de_generations: int = 20
+    de_f: float = 0.7
+    de_cr: float = 0.9
+    de_stall_generations: int = 5
+    de_seed: int = 42
 
 
 @dataclass
@@ -147,6 +159,7 @@ class FrameworkConfig:
     optimizer: OptimizerSettings
     watchdog: WatchdogSettings
     analysis: AnalysisSettings
+    file_pipeline: List[Dict[str, Any]] = field(default_factory=list)
 
     # ── Legacy-compatible derived views ──────────────────────────────────────
 
@@ -358,6 +371,8 @@ def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> FrameworkConfig:
         },
         cancel_cmd=str(slurm_raw.get("cancel_cmd", "scancel {job_id}")),
         status_cmd=str(slurm_raw.get("status_cmd", "squeue -h -j {job_id} -o %T")),
+        sacct_cmd=str(slurm_raw.get(
+            "sacct_cmd", "sacct -j {job_id} -n -o State -X")),
         submit_timeout=float(slurm_raw.get("submit_timeout", 30.0)),
     )
 
@@ -385,6 +400,20 @@ def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> FrameworkConfig:
         poll_interval=float(opt_raw.get("poll_interval", 30.0)),
         job_timeout=float(opt_raw.get("job_timeout", 3600.0)),
         history_csv=Path(opt_raw.get("history_csv", "optimization_history.csv")),
+        postprocess=bool(opt_raw.get("postprocess", False)),
+        experimental_data=(
+            Path(opt_raw["experimental_data"])
+            if opt_raw.get("experimental_data") is not None else None
+        ),
+        sim_output_file=str(opt_raw.get("sim_output_file", "output.dat")),
+        spline_k=int(opt_raw.get("spline_k", 3)),
+        spline_s=float(opt_raw.get("spline_s", 0.0)),
+        de_popsize=int(opt_raw.get("de_popsize", 15)),
+        de_generations=int(opt_raw.get("de_generations", 20)),
+        de_f=float(opt_raw.get("de_f", 0.7)),
+        de_cr=float(opt_raw.get("de_cr", 0.9)),
+        de_stall_generations=int(opt_raw.get("de_stall_generations", 5)),
+        de_seed=int(opt_raw.get("de_seed", 42)),
     )
 
     wd_raw = dict(raw.get("watchdog") or {})
@@ -421,6 +450,8 @@ def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> FrameworkConfig:
     root = Path(scan.get("workspace", "sweep_workspace"))
     root.mkdir(parents=True, exist_ok=True)
 
+    file_pipeline = [dict(entry) for entry in (raw.get("file_pipeline") or [])]
+
     return FrameworkConfig(
         param_specs=param_specs,
         swept_specs=swept_specs,
@@ -439,4 +470,5 @@ def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> FrameworkConfig:
         optimizer=optimizer,
         watchdog=watchdog,
         analysis=analysis,
+        file_pipeline=file_pipeline,
     )

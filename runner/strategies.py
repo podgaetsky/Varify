@@ -5,6 +5,8 @@ Every strategy is pure standard library (``math``/``random``/
 scipy/emcee when installed and requested via ``options["backend"]``:
 
 * ``optimize``        — bound-constrained Nelder-Mead simplex (checkpointed);
+* ``hybrid``          — global Differential Evolution seeding a Nelder-Mead
+  local polish (checkpointed, globally-numbered two-phase history);
 * ``grid``            — concurrent Cartesian parameter sweep
   (``multiprocessing.Pool``, chunk-level checkpoint/resume);
 * ``mcmc``            — affine-invariant ensemble sampler
@@ -191,6 +193,160 @@ def _nelder_mead(
                     simplex[k] = combine(simplex[0], simplex[k], sigma)
                     fvals[k] = fn(simplex[k])
     return False
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  1b. Hybrid global/local optimization (Differential Evolution → Nelder-Mead)
+# ═════════════════════════════════════════════════════════════════════════════
+
+@register_strategy("hybrid")
+def hybrid_strategy(ctx: RunContext) -> Dict[str, Any]:
+    """Minimize ``model(**params)`` with global DE seeding a local NM polish.
+
+    Pure-Python rand/1/bin Differential Evolution explores the box first;
+    its champion hands off to the existing :func:`_nelder_mead` simplex for
+    the remaining evaluation budget.  Both phases share one evaluation
+    history, globally numbered, with a ``phase`` column ("de"/"nm")
+    distinguishing them.  Checkpointing mirrors :func:`optimize_strategy`:
+    the population/fitness/generation/stall counters and the running
+    incumbent are snapshotted every autosave interval, so an interrupted
+    run resumes mid-population-init, mid-generation (redoing at most the
+    in-flight generation) or mid-simplex.
+    """
+    spec, opts, rng = ctx.spec, ctx.spec.options, ctx.rng
+    names = list(spec.bounds)
+    bounds = [tuple(map(float, spec.bounds[n])) for n in names]
+    ndim = len(names)
+    maximize = bool(opts.get("maximize", False))
+    max_evals = int(opts.get("max_evaluations", 200))
+    xatol = float(opts.get("xatol", 1e-6))
+    fatol = float(opts.get("fatol", 1e-8))
+    sign = -1.0 if maximize else 1.0
+
+    popsize = int(opts.get("de_popsize", 15))
+    generations = int(opts.get("de_generations", 20))
+    f_scale = float(opts.get("de_f", 0.7))
+    cr = float(opts.get("de_cr", 0.9))
+    stall_limit = int(opts.get("de_stall", 5))
+
+    assert spec.model is not None
+    state = ctx.checkpoint.load() or {
+        "history": [], "best": None, "phase": "de",
+        "population": None, "fitness": None,
+        "generation": 0, "stall": 0,
+    }
+    history: List[Dict[str, Any]] = state["history"]
+
+    def budget_left() -> int:
+        return max_evals - len(history)
+
+    def can_eval() -> bool:
+        return budget_left() > 0 and not ctx.checkpoint.stop_requested
+
+    def objective(x: List[float], phase: str) -> float:
+        if not _bounded(x, bounds):
+            return _PENALTY
+        value = sign * float(spec.model(**dict(zip(names, x))))
+        history.append({"x": list(x), "value": sign * value, "phase": phase})
+        if state["best"] is None or value < sign * float(state["best"]["value"]):
+            state["best"] = {"x": list(x), "value": sign * value}
+        ctx.checkpoint.maybe_save(state)
+        return value
+
+    # ── Phase 1: rand/1/bin Differential Evolution ────────────────────────────
+    if state["phase"] == "de":
+        if state["population"] is None:
+            population: List[List[float]] = []
+            x0_opt = opts.get("x0")
+            if x0_opt is not None:
+                population.append([float(x0_opt[n]) for n in names])
+            while len(population) < popsize:
+                population.append(
+                    [rng.uniform(lo, hi) for lo, hi in bounds]
+                )
+            state["population"] = population
+            state["fitness"] = []
+            ctx.checkpoint.maybe_save(state)
+
+        population = state["population"]
+        fitness = state["fitness"]
+        while len(fitness) < len(population) and can_eval():
+            fitness.append(objective(population[len(fitness)], "de"))
+        state["fitness"] = fitness
+
+        generation = state["generation"]
+        stall = state["stall"]
+        while (
+            len(fitness) == len(population)
+            and generation < generations
+            and stall < stall_limit
+            and can_eval()
+        ):
+            prev_best = min(fitness)
+            for i in range(len(population)):
+                if not can_eval():
+                    break
+                idxs = [j for j in range(len(population)) if j != i]
+                if len(idxs) >= 3:
+                    r1, r2, r3 = rng.sample(idxs, 3)
+                else:
+                    r1, r2, r3 = (rng.choice(idxs) for _ in range(3))
+                mutant = [
+                    population[r1][d]
+                    + f_scale * (population[r2][d] - population[r3][d])
+                    for d in range(ndim)
+                ]
+                j_rand = rng.randrange(ndim)
+                trial = [
+                    mutant[d] if (rng.random() < cr or d == j_rand)
+                    else population[i][d]
+                    for d in range(ndim)
+                ]
+                trial = [
+                    min(max(v, lo), hi) for v, (lo, hi) in zip(trial, bounds)
+                ]
+                trial_f = objective(trial, "de")
+                if trial_f <= fitness[i]:
+                    population[i] = trial
+                    fitness[i] = trial_f
+            generation += 1
+            best_now = min(fitness)
+            stall = stall + 1 if prev_best - best_now < fatol else 0
+            state["population"], state["fitness"] = population, fitness
+            state["generation"], state["stall"] = generation, stall
+            ctx.checkpoint.maybe_save(state)
+
+        state["phase"] = "nm"
+        ctx.checkpoint.maybe_save(state)
+
+    # ── Phase 2: Nelder-Mead local polish, seeded by the DE champion ─────────
+    converged = False
+    if state["best"] is not None and can_eval():
+        x0_nm = list(state["best"]["x"])
+        converged = _nelder_mead(
+            lambda x: objective(x, "nm"), x0_nm, bounds, budget_left,
+            xatol, fatol, stop=lambda: ctx.checkpoint.stop_requested,
+        )
+
+    ctx.checkpoint.save(state)
+    ctx.save_rows(
+        "history.csv",
+        ["eval", *names, "value", "phase"],
+        [[i + 1, *h["x"], h["value"], h["phase"]] for i, h in enumerate(history)],
+    )
+    best = state["best"] or {
+        "x": [0.5 * (lo + hi) for lo, hi in bounds], "value": float("nan"),
+    }
+    return {
+        "best_params": dict(zip(names, best["x"])),
+        "best_value": best["value"],
+        "n_evaluations": len(history),
+        "converged": converged and not ctx.checkpoint.stop_requested,
+        "backend": "builtin",
+        "de_generations": state["generation"],
+        "de_evaluations": sum(1 for h in history if h["phase"] == "de"),
+        "nm_evaluations": sum(1 for h in history if h["phase"] == "nm"),
+    }
 
 
 # ═════════════════════════════════════════════════════════════════════════════
