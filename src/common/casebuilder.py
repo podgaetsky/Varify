@@ -1,24 +1,37 @@
-"""Case-directory construction: template substitution + per-param input_fns.
+"""Case-directory construction: source staging + template substitution +
+per-param input_fns.
 
 This unifies the (previously duplicated) directory-preparation machinery of
 the legacy ``GridManager.prepare_case`` and ``MCMCManager._dispatch_walker``.
-The behaviour is unchanged:
 
-* ``@KEY@`` tokens in every template file are substituted with the parameter
-  values (upper-cased names, ``%.10g`` formatting) plus ``@JOB_NAME@``.
-* A trailing ``.template`` suffix is stripped from the destination file name.
-* ``*.sh`` templates (or templates already executable) are made executable.
-* Each param's ``input_fn(case_dir, value, **selected_params)`` is invoked
-  with keyword arguments filtered by signature introspection.
-* If ``cfg.file_pipeline`` is non-empty, ``utils.file_pipeline.apply_pipeline``
-  runs it last, generating/modifying extra files declared in the YAML config.
+Each case directory is built by running these steps *in order*:
+
+1. **Stage source dir** — if ``cfg.case_source_dir`` is set, its contents are
+   recursively copied into the case directory first, and every copied file
+   whose path matches ``cfg.case_substitute_globs`` has ``@TOKEN@``
+   substitution applied in place (see :meth:`CaseBuilder._stage_source_dir`).
+2. **Render templates** — ``@KEY@`` tokens in every template file are
+   substituted with the parameter values (upper-cased names, ``%.10g``
+   formatting) plus ``@JOB_NAME@``. A trailing ``.template`` suffix is
+   stripped from the destination file name. ``*.sh`` templates (or templates
+   already executable) are made executable. Templates are written into the
+   case directory *after* staging, so a template can overwrite a
+   same-named file that was staged from the source directory.
+3. **input_fns** — each param's ``input_fn(case_dir, value,
+   **selected_params)`` is invoked with keyword arguments filtered by
+   signature introspection.
+4. **file_pipeline** — if ``cfg.file_pipeline`` is non-empty,
+   ``utils.file_pipeline.apply_pipeline`` runs last, generating/modifying
+   extra files declared in the YAML config.
 """
 
 from __future__ import annotations
 
+import fnmatch
 import inspect
 import logging
 import os
+import shutil
 from pathlib import Path
 from typing import Any, Dict
 
@@ -45,6 +58,45 @@ class CaseBuilder:
         for name, val in params.items():
             m[name.upper()] = f"{val:.10g}"
         return m
+
+    def _stage_source_dir(self, case_dir: Path, smap: Dict[str, str]) -> None:
+        """Copy ``cfg.case_source_dir`` into *case_dir*, then apply @TOKEN@
+        substitution in place to every copied file matching
+        ``cfg.case_substitute_globs``.
+
+        Matching is against both the bare filename and the file's path
+        relative to *case_dir* (POSIX separators), so globs like
+        ``"*.inp"`` and ``"sub/*.inp"`` both work. Binary files (that fail
+        UTF-8 decoding) are left untouched. Executable bits are preserved by
+        ``shutil.copytree``.
+        """
+        src = self.cfg.case_source_dir
+        if src is None:
+            return
+        if not src.is_dir():
+            self._log.warning(
+                "case_source_dir configured but not found, skipping: %s", src
+            )
+            return
+        shutil.copytree(src, case_dir, dirs_exist_ok=True)
+
+        globs = self.cfg.case_substitute_globs
+        for path in case_dir.rglob("*"):
+            if not path.is_file():
+                continue
+            rel = path.relative_to(case_dir).as_posix()
+            if not any(
+                fnmatch.fnmatch(path.name, g) or fnmatch.fnmatch(rel, g)
+                for g in globs
+            ):
+                continue
+            try:
+                raw = path.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                continue
+            filled = self.substitute(raw, smap)
+            if filled != raw:
+                path.write_text(filled, encoding="utf-8")
 
     def _render_templates(self, case_dir: Path, smap: Dict[str, str]) -> None:
         for tpl_path_str in self.cfg.template_files:
@@ -95,9 +147,12 @@ class CaseBuilder:
         params: Dict[str, float],
         job_name: str,
     ) -> Path:
-        """Create *case_dir*, render all templates, run all input_fns."""
+        """Create *case_dir* and run the full per-case pipeline, in order:
+        stage source dir -> render templates -> input_fns -> file_pipeline.
+        """
         case_dir.mkdir(parents=True, exist_ok=True)
         smap = self.substitution_map(params, job_name)
+        self._stage_source_dir(case_dir, smap)
         self._render_templates(case_dir, smap)
         self._run_input_fns(case_dir, params)
         if self.cfg.file_pipeline:

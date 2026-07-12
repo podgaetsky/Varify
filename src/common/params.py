@@ -7,10 +7,37 @@ must not change.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional
 
 import numpy as np
+
+_UNSAFE_CHARS_RE = re.compile(r"[^A-Za-z0-9._+-]")
+
+
+def descriptive_name(
+    prefix: str,
+    params: Dict[str, float],
+    names: Optional[List[str]] = None,
+    max_params: int = 6,
+) -> str:
+    """Build a filesystem-safe, human-readable case/job name.
+
+    Produces ``f"{prefix}__{n1}_{v1:.6g}_{n2}_{v2:.6g}..."`` using only
+    *names* (or every key in *params*, insertion order, if *names* is
+    ``None``), capped at *max_params* entries. Mirrors the formatting
+    convention of :attr:`GridPoint.case_dir_name` (``%.6g`` values, ``/``
+    replaced with ``_``), plus a sweep of any remaining filesystem-unsafe
+    characters (whitespace or anything outside ``[A-Za-z0-9._+-]``) to
+    ``_`` so the result is always a safe single path component.
+    """
+    keys = list(names) if names is not None else list(params.keys())
+    keys = keys[:max_params]
+    rest = "_".join(f"{n}_{params[n]:.6g}" for n in keys if n in params)
+    name = f"{prefix}__{rest}" if rest else prefix
+    name = name.replace("/", "_")
+    return _UNSAFE_CHARS_RE.sub("_", name)
 
 
 @dataclass

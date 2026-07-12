@@ -23,7 +23,7 @@ import pandas as pd
 from varify.src.common.casebuilder import CaseBuilder
 from varify.src.common.config import FrameworkConfig
 from varify.src.analysis.parser import ResultParser
-from varify.src.analysis.postprocess import spline_mse
+from varify.src.analysis.postprocess import curve_loss
 from varify.src.slurm.dispatcher import SlurmDispatcher
 
 
@@ -73,7 +73,7 @@ class BaseOptimizer(ABC):
         preserves the previous output-file-only behavior.
 
         When ``cfg.optimizer.postprocess`` is enabled, the metric is instead
-        the spline-interpolated MSE against the configured experimental
+        the interpolated-curve loss against the configured experimental
         dataset (see :meth:`_postprocess_case`) rather than a regex-parsed
         scalar. That metric is an error — lower is better — which composes
         naturally with the ``maximize: false`` default.
@@ -94,23 +94,34 @@ class BaseOptimizer(ABC):
         return self.parser.parse_case(case_dir, regex=regex)
 
     def _postprocess_case(self, case_dir: Path) -> float:
-        """Score *case_dir* via spline-interpolated MSE against experiment.
+        """Score *case_dir* via interpolated-curve loss against experiment.
+
+        The interpolation (spline/linear) and loss (mse/rmse/mae/huber/chi2,
+        or a user-supplied ``loss_fn`` hook) are selected from
+        ``cfg.optimizer``; see :func:`~src.analysis.postprocess.curve_loss`.
 
         Returns NaN (with a logged error) if no ``experimental_data`` path
         is configured.
         """
-        if self.cfg.optimizer.experimental_data is None:
+        opt = self.cfg.optimizer
+        if opt.experimental_data is None:
             self._log.error(
                 "postprocess is enabled but optimizer.experimental_data is "
                 "not set; returning NaN for %s", case_dir.name,
             )
             return float("nan")
-        return spline_mse(
+        loss = opt.loss_fn or opt.loss
+        loss_kwargs = {"delta": opt.huber_delta} if loss == "huber" else None
+        return curve_loss(
             case_dir,
-            self.cfg.optimizer.experimental_data,
-            self.cfg.optimizer.sim_output_file,
-            k=self.cfg.optimizer.spline_k,
-            s=self.cfg.optimizer.spline_s,
+            opt.experimental_data,
+            opt.sim_output_file,
+            loss=loss,
+            interp=opt.interp,
+            k=opt.spline_k,
+            s=opt.spline_s,
+            y_err_col=opt.experimental_err_col,
+            loss_kwargs=loss_kwargs,
         )
 
     # ── Strategy (subclass responsibility) ────────────────────────────────────

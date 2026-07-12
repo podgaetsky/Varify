@@ -21,6 +21,7 @@ import pandas as pd
 from scipy import optimize
 
 from varify.src.common.config import FrameworkConfig
+from varify.src.common.params import descriptive_name
 from varify.src.optimizer.base import BaseOptimizer
 from varify.src.slurm.dispatcher import SlurmDispatcher
 
@@ -98,8 +99,10 @@ class NelderMeadOptimizer(BaseOptimizer):
             self._append_history(params, float("nan"), "", None)
             return _PENALTY
 
-        case_name = f"opt_eval{self._n_evals:05d}"
-        job_name = f"opt_{self._n_evals:05d}"
+        case_name = descriptive_name(
+            f"opt_eval{self._n_evals:05d}", params, [s.name for s in specs]
+        )
+        job_name = case_name
         case_dir, job_id = self._dispatch_case(
             case_name, job_name, params, dispatcher
         )

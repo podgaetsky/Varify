@@ -18,6 +18,12 @@ scan:
   results_csv: sweep_results.csv
   submission_log: submission.log
 
+# ── Case source-dir staging (optional) ──────────────────────────────────────
+#   Runs first, before templates/input_fns/file_pipeline.
+# case:
+#   source_dir: case_template_dir      # copied recursively into each case dir
+#   substitute_globs: ["*"]            # @TOKEN@-substituted files (fnmatch, "*" = all)
+
 # ── Parameters: sweep axes, static defaults, couplings and MCMC priors ─────
 #   sweep:  values: [..]  OR  start/stop/num (+ log_scale)  — omit to keep static
 #   mcmc :  prior_low/prior_high (hard bounds; also used as optimizer bounds),
@@ -80,6 +86,11 @@ optimizer:
   # sim_output_file: output.dat   # simulated two-column curve, relative to case_dir
   # spline_k: 3                   # spline degree (auto-reduced if too few points)
   # spline_s: 0.0                 # 0 = exact interpolation; >0 = smoothing spline
+  # loss: mse  # mse | rmse | mae | huber | chi2
+  # interp: spline  # spline | linear
+  # huber_delta: 1.0
+  # experimental_err_col: null  # column index of sigma for chi2
+  # loss_fn: null  # custom hook name, overrides 'loss'
   # ── Hybrid DE→Nelder-Mead (method: de-nm) ──────────────────────────────────
   # de_popsize: 15                # candidates per DE generation (batch-submitted)
   # de_generations: 20            # max DE generations before NM refinement

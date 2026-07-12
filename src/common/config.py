@@ -101,6 +101,11 @@ class OptimizerSettings:
     sim_output_file: str = "output.dat"
     spline_k: int = 3
     spline_s: float = 0.0
+    loss: str = "mse"
+    interp: str = "spline"
+    huber_delta: float = 1.0
+    experimental_err_col: Optional[int] = None
+    loss_fn: Optional[Callable] = None
     de_popsize: int = 15
     de_generations: int = 20
     de_f: float = 0.7
@@ -160,6 +165,8 @@ class FrameworkConfig:
     watchdog: WatchdogSettings
     analysis: AnalysisSettings
     file_pipeline: List[Dict[str, Any]] = field(default_factory=list)
+    case_source_dir: Optional[Path] = None
+    case_substitute_globs: List[str] = field(default_factory=lambda: ["*"])
 
     # ── Legacy-compatible derived views ──────────────────────────────────────
 
@@ -408,6 +415,14 @@ def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> FrameworkConfig:
         sim_output_file=str(opt_raw.get("sim_output_file", "output.dat")),
         spline_k=int(opt_raw.get("spline_k", 3)),
         spline_s=float(opt_raw.get("spline_s", 0.0)),
+        loss=str(opt_raw.get("loss", "mse")),
+        interp=str(opt_raw.get("interp", "spline")),
+        huber_delta=float(opt_raw.get("huber_delta", 1.0)),
+        experimental_err_col=(
+            int(opt_raw["experimental_err_col"])
+            if opt_raw.get("experimental_err_col") is not None else None
+        ),
+        loss_fn=_resolve_callable(hooks, opt_raw.get("loss_fn"), "optimizer.loss_fn"),
         de_popsize=int(opt_raw.get("de_popsize", 15)),
         de_generations=int(opt_raw.get("de_generations", 20)),
         de_f=float(opt_raw.get("de_f", 0.7)),
@@ -452,6 +467,15 @@ def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> FrameworkConfig:
 
     file_pipeline = [dict(entry) for entry in (raw.get("file_pipeline") or [])]
 
+    case_raw = dict(raw.get("case") or {})
+    case_source_dir = (
+        Path(case_raw["source_dir"]) if case_raw.get("source_dir") is not None
+        else None
+    )
+    case_substitute_globs = [
+        str(g) for g in (case_raw.get("substitute_globs") or ["*"])
+    ]
+
     return FrameworkConfig(
         param_specs=param_specs,
         swept_specs=swept_specs,
@@ -471,4 +495,6 @@ def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> FrameworkConfig:
         watchdog=watchdog,
         analysis=analysis,
         file_pipeline=file_pipeline,
+        case_source_dir=case_source_dir,
+        case_substitute_globs=case_substitute_globs,
     )

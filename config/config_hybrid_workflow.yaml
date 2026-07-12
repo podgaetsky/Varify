@@ -1,0 +1,193 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  Varify — full per-iteration hybrid-optimizer workflow (sample config)
+#
+#  This is a documentation-grade, COMPLETE configuration showing the entire
+#  "stage → modify → submit → wait → compare → advance" loop that the hybrid
+#  Differential-Evolution → Nelder-Mead optimizer (method: de-nm) drives:
+#
+#    Step 1 (stage):    case.source_dir is copied into every case directory
+#                        and @TOKEN@ tokens are substituted from that case's
+#                        parameter values.                       [case:]
+#    Step 2 (modify):   extra files (e.g. params.json) are generated/edited
+#                        per case via the declarative file pipeline.
+#                                                          [file_pipeline:]
+#    Step 3 (submit & wait): one sbatch job is submitted per case; the
+#                        hybrid optimizer submits a WHOLE GENERATION of
+#                        candidates concurrently, then blocks on
+#                        dispatcher.wait_for_batch for the batch to finish.
+#                                                          [slurm:] [optimizer:]
+#    Step 4 (compare):  each case's simulated output curve is read, aligned
+#                        onto the experimental x-grid (spline or linear
+#                        interpolation) and scored with a configurable loss.
+#                                                          [optimizer: postprocess]
+#    Step 5 (advance):  DE mutates/selects the next generation from the
+#                        scored population; once DE stalls or exhausts its
+#                        generation budget, Nelder-Mead polishes the DE
+#                        champion with whatever evaluation budget remains.
+#                                                          [optimizer: de_*]
+#
+#  Case directories carry descriptive, greppable names such as
+#  de_g003_c007__amplitude_1.83_decay_0.71 (generation 3, candidate 7).
+#
+#  Adapt paths to your own layout and copy this file to config/config.yaml,
+#  or pass it explicitly: load_config("config/config_hybrid_workflow.yaml").
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Hooks module: Python file holding input_fn / coupled_fn / analysis_fn /
+# loss_fn callables referenced below by name. Required by the loader (falls
+# back to config/hooks.py if omitted, and to "no callables available" if that
+# default doesn't exist either — safe to omit here since this sample config
+# uses no custom hooks).
+hooks_module: config/hooks.py
+
+# ── Scan block (workspace root + legacy template/regex settings) ───────────
+#   `output_regex` is the legacy regex-scrape scoring path and is ignored
+#   once optimizer.postprocess: true (Step 4) takes over scoring — but
+#   `output_file` still matters: it is the file whose EXISTENCE the
+#   framework polls (ResultParser.wait_for_output) to decide a case has
+#   finished. It must therefore be the result file your simulation itself
+#   writes (here output.dat, matching optimizer.sim_output_file below),
+#   NOT a redirected log such as stdout.log — the scheduler/shell creates
+#   log files the moment the job starts, long before any results exist,
+#   which would make the wait return early and score an empty case.
+scan:
+  mode: grid                       # unused by de-nm; kept for schema parity
+  workspace: sweep_workspace_hybrid  # root dir under which every case_dir lives
+  template_files:                  # rendered *after* case.source_dir staging;
+    - templates/run_script.sh.template  # can overwrite a staged same-named file
+  output_file: output.dat          # completion sentinel = the real result file
+  output_regex: 'RESULT:\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)'
+  results_csv: sweep_results.csv
+  submission_log: submission.log
+
+# ── STEP 1: Case source-dir staging ─────────────────────────────────────────
+#   Runs first for every case directory: source_dir's contents are copied
+#   recursively into the case dir, then every copied file matching one of
+#   substitute_globs has @TOKEN@ substitution applied in place (tokens are
+#   the upper-cased parameter names below, plus @JOB_NAME@).
+case:
+  source_dir: case_template_dir      # your simulation driver files live here
+  substitute_globs: ["*.cfg", "*.inp"]  # only these get @TOKEN@ substitution;
+                                        # binaries / untouched files pass through as-is
+
+# ── Parameters: search-space definition for the optimizer ──────────────────
+#   Two parameters of a damped oscillator y = amplitude * exp(-decay*x) *
+#   sin(omega*x). Each carries mcmc: prior_low/prior_high — the hybrid
+#   optimizer uses these bounds as its DE search box (and as hard box
+#   constraints during the Nelder-Mead refinement phase). No `sweep:` block
+#   is given, since this is an optimizer run, not a grid/line scan.
+parameters:
+  - name: amplitude
+    default: 2.0
+    # input_fn: my_amplitude_hook     # optional per-param hook (see config/hooks.py's
+                                       # tau_input_fn/gamma_input_fn for the pattern:
+                                       # input_fn(case_dir, value, **params) -> None)
+    mcmc: {prior_low: 0.1, prior_high: 5.0, init_center: 2.0, init_width: 0.5}
+
+  - name: decay
+    default: 0.5
+    mcmc: {prior_low: 0.01, prior_high: 2.0, init_center: 0.5, init_width: 0.2}
+
+# ── SLURM directives & command templates ────────────────────────────────────
+#   STEP 3 (submit): submit_cmd is rendered once per case and run with cwd=
+#   case_dir. For a real cluster this is a plain sbatch invocation; see
+#   examples/example_08_hybrid_slurm_workflow.py for the local-laptop
+#   substitute (a `nohup bash run_script.sh & echo "Submitted batch job $!"`
+#   one-liner) that lets this exact config run with no scheduler at all.
+slurm:
+  submit_cmd: "sbatch --job-name={job_name} --output=stdout.log --error=stderr.log {directives} run_script.sh"
+  directives:
+    partition: compute
+    time: "01:00:00"
+    ntasks: 1
+    # mem: 4G
+    # account: my_account
+  cancel_cmd: "scancel {job_id}"
+  status_cmd: "squeue -h -j {job_id} -o %T"
+  sacct_cmd: "sacct -j {job_id} -n -o State -X"
+  submit_timeout: 30.0
+
+# ── MCMC block (unused by de-nm, but prior bounds above double as its
+#   search space too if you ever switch optimizer.method to an MCMC run;
+#   left at defaults here since this sample is optimizer-focused). ─────────
+mcmc:
+  log_prob_regex: 'LOG_PROB:\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)'
+  num_walkers: 10
+  num_iters: 500
+  burnin: 100
+  stretch_a: 2.0
+  poll_interval: 30.0
+  job_timeout: 3600.0
+  use_dependency: false
+  chain_csv: mcmc_chain.csv
+
+# ── STEPS 3 & 4: Hybrid DE→Nelder-Mead optimizer ────────────────────────────
+optimizer:
+  method: de-nm                    # Differential Evolution -> Nelder-Mead refinement
+  maximize: false                  # minimize the curve-loss metric below
+  max_evaluations: 300             # hard cap across DE + NM phases combined
+  tolerance: 1.0e-4
+  objective_regex: null            # unused once postprocess: true (Step 4)
+  poll_interval: 15.0              # seconds between dispatcher.wait_for_batch polls
+  job_timeout: 3600.0              # seconds before a case's job is declared failed
+  history_csv: optimization_history.csv
+
+  # STEP 4: postprocess scoring — compare simulated curve to experiment.
+  postprocess: true                # true -> score via curve_loss instead of regex
+  experimental_data: experiment.csv   # two-column (x, y) reference dataset
+  sim_output_file: output.dat         # simulated two-column curve, relative to case_dir
+  spline_k: 3                      # spline degree (auto-reduced if too few points)
+  spline_s: 0.0                    # 0 = exact interpolation; >0 = smoothing spline
+  loss: mse                        # mse | rmse | mae | huber | chi2
+  interp: spline                   # spline | linear
+  huber_delta: 1.0                 # only used when loss: huber
+  experimental_err_col: null       # column index of sigma for loss: chi2
+  loss_fn: null                    # custom hook name; overrides 'loss' entirely
+
+  # STEP 3/5: Differential Evolution phase (rand/1/bin), batch-submitted —
+  # one whole generation of de_popsize candidates is dispatched concurrently
+  # each round, then the optimizer blocks once on dispatcher.wait_for_batch
+  # for the entire generation rather than waiting job-by-job.
+  de_popsize: 15                   # candidates per DE generation
+  de_generations: 20               # max DE generations before NM refinement
+  de_f: 0.7                        # DE differential weight (mutation scale)
+  de_cr: 0.9                       # DE crossover probability
+  de_stall_generations: 5          # early-stop DE after this many stalled gens
+  de_seed: 42                      # seed for the DE random number generator
+
+# ── Watchdog daemon (optional background failure monitor) ──────────────────
+watchdog:
+  poll_interval: 60.0
+  stall_timeout: 1800.0
+  nan_regex: '(?i)\bnan\b'
+  log_files: [stdout.log, stderr.log]
+  status_csv: status.csv
+  max_resubmits: 2
+  resubmit_scaling:
+    decay: 0.5                     # e.g. halve decay on resubmission
+  agent_directives:
+    partition: compute
+    time: "24:00:00"
+
+# ── Analysis & plotting ─────────────────────────────────────────────────────
+analysis:
+  plots_dir: results/plots_hybrid
+  sqlite_db: results/results_hybrid.db
+  sqlite_table: results
+  analysis_fns: []                 # add hook names here for custom analysis
+
+# ── STEP 2: File pipeline — generate/modify extra per-case files ───────────
+#   Runs once per case, after source-dir staging + templates + input_fns.
+#   "$name" values are resolved from that case's own parameter values.
+file_pipeline:
+  - action: generate               # write a brand-new params.json per case
+    file: params.json              # relative to the case directory
+    fmt: json                      # auto-detected from extension too
+    keys:
+      amplitude: "$amplitude"      # resolved from this case's amplitude value
+      decay: "$decay"              # resolved from this case's decay value
+      note: "generated by file_pipeline (Step 2)"
+  - action: modify                 # edit params.json in place, runs after generate
+    file: params.json
+    keys:
+      omega: 6.283185307           # literal value (2*pi), added as a new key

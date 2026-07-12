@@ -23,6 +23,7 @@ import pandas as pd
 from scipy import optimize
 
 from varify.src.common.config import FrameworkConfig
+from varify.src.common.params import descriptive_name
 from varify.src.optimizer.gradient_free import NelderMeadOptimizer, _PENALTY
 from varify.src.slurm.dispatcher import SlurmDispatcher
 
@@ -69,7 +70,9 @@ class HybridDEOptimizer(NelderMeadOptimizer):
                 results[i] = _PENALTY
                 continue
 
-            case_name = f"{tag}_c{i:03d}"
+            case_name = descriptive_name(
+                f"{tag}_c{i:03d}", params, [s.name for s in specs]
+            )
             case_dir, job_id = self._dispatch_case(
                 case_name, case_name, params, dispatcher
             )

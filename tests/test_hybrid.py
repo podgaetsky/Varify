@@ -73,6 +73,8 @@ def _make_cfg(tmp_path: Path, **opt_overrides) -> types.SimpleNamespace:
         defaults={"x": -1.5, "y": -1.5},
         optimizer=optimizer,
         sweep_root=tmp_path / "sweep",
+        case_source_dir=None,
+        case_substitute_globs=["*"],
     )
 
 

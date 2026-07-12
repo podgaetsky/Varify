@@ -6,6 +6,9 @@ Three kinds of hooks are supported:
   for one parameter (runs after template substitution);
 * ``coupled_fn(driver_value) -> value``  — derives a coupled parameter from
   its driver parameter;
+* ``loss_fn(y_pred, y_ref) -> float`` — a custom postprocess loss, referenced
+  from ``optimizer.loss_fn`` in place of a built-in ``optimizer.loss`` name
+  (see :mod:`src.analysis.postprocess`);
 * analysis functions — registered under ``analysis.analysis_fns``; the
   dispatcher inspects the signature: functions declaring ``df``/``cfg`` (or
   ``**kwargs``) are called once with the full DataFrame pool, all others are
@@ -55,6 +58,23 @@ def gamma_input_fn(case_dir: Path, value: float, **params: Any) -> None:
 def kappa_from_tau(tau: float) -> float:
     """kappa rides along with tau at half its value."""
     return tau / 2.0
+
+
+# ── loss_fn hooks ────────────────────────────────────────────────────────────
+
+def log_mse(y_pred: np.ndarray, y_ref: np.ndarray) -> float:
+    """Example loss_fn: MSE in log10 space, useful when the curve spans
+    several orders of magnitude and large-y regions would otherwise dominate
+    a plain MSE. Values are floor-clipped before taking the log so that
+    zero/negative samples don't produce -inf/NaN.
+
+    Select with ``optimizer: {loss_fn: log_mse}`` in config.yaml — this
+    takes precedence over ``optimizer.loss``.
+    """
+    floor = 1e-12
+    yp = np.log10(np.clip(np.asarray(y_pred, dtype=float), floor, None))
+    yr = np.log10(np.clip(np.asarray(y_ref, dtype=float), floor, None))
+    return float(np.mean((yp - yr) ** 2))
 
 
 # ── analysis functions ────────────────────────────────────────────────────────

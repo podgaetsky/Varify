@@ -3,9 +3,13 @@
 from varify.src.analysis.parser import ResultParser
 from varify.src.analysis.analysis_dispatcher import AnalysisDispatcher
 from varify.src.analysis.plotting import PlotSuite
-from varify.src.analysis.postprocess import load_xy, fit_spline, spline_mse
+from varify.src.analysis.postprocess import (
+    load_xy, fit_spline, spline_mse, curve_loss, compute_loss,
+    mse, rmse, mae, huber, chi2, LOSSES,
+)
 
 __all__ = [
     "ResultParser", "AnalysisDispatcher", "PlotSuite",
-    "load_xy", "fit_spline", "spline_mse",
+    "load_xy", "fit_spline", "spline_mse", "curve_loss", "compute_loss",
+    "mse", "rmse", "mae", "huber", "chi2", "LOSSES",
 ]
