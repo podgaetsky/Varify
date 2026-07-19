@@ -104,12 +104,14 @@ class HybridDEOptimizer(NelderMeadOptimizer):
                         "Job %s did not complete for %s", job_id, case_dir,
                     )
                     metric = float("nan")
-                elif self.cfg.optimizer.postprocess:
-                    metric = self._postprocess_case(case_dir)
                 else:
-                    metric = self.parser.parse_case(
-                        case_dir, regex=self.cfg.objective_regex
-                    )
+                    self.post_job.run_case(case_dir, params, job_id)
+                    if self.cfg.optimizer.postprocess:
+                        metric = self._postprocess_case(case_dir)
+                    else:
+                        metric = self.parser.parse_case(
+                            case_dir, regex=self.cfg.objective_regex
+                        )
 
                 self._append_history(params, metric, str(case_dir), job_id)
                 if not np.isfinite(metric):

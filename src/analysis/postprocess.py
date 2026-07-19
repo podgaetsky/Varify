@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Callable, Dict, Optional, Tuple, Union
+from typing import Callable, Dict, Iterable, Optional, Tuple, Union
 
 import numpy as np
 
@@ -86,6 +86,36 @@ def load_xy(
     if err_col is not None:
         return x_arr, y_arr, e_arr
     return x_arr, y_arr
+
+
+def write_xy(
+    path: Path,
+    x: Iterable[float],
+    y: Iterable[float],
+    header: Optional[str] = None,
+) -> Path:
+    """Write a two-column whitespace-delimited ``(x, y)`` file, round-trip
+    readable by :func:`load_xy`.
+
+    Meant for post-job analysis hooks (``analysis.post_job_fns``) that
+    reduce a raw per-case simulation file into the simulated curve
+    ``optimizer.postprocess``/:func:`curve_loss` compares against
+    ``optimizer.experimental_data``. Rows are written in the given order
+    (sorted by x is the caller's responsibility, same as *load_xy* expects
+    for spline fitting); parent directories are created if missing.
+    """
+    x_arr = np.asarray(list(x), dtype=float)
+    y_arr = np.asarray(list(y), dtype=float)
+    if x_arr.shape != y_arr.shape:
+        raise ValueError(
+            f"x and y must be the same length (got {x_arr.size} vs {y_arr.size})"
+        )
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [f"# {header}"] if header else []
+    lines.extend(f"{xi:.10g}\t{yi:.10g}" for xi, yi in zip(x_arr, y_arr))
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
 
 
 def fit_spline(

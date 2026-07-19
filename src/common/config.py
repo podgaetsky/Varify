@@ -17,7 +17,7 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 import yaml
@@ -136,6 +136,8 @@ class AnalysisSettings:
     sqlite_db: Path = Path("results") / "results.db"
     sqlite_table: str = "results"
     analysis_fns: List[Callable] = field(default_factory=list)
+    # (fn, static_kwargs) pairs — see PostJobDispatcher.
+    post_job_fns: List[Tuple[Callable, Dict[str, Any]]] = field(default_factory=list)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -214,6 +216,10 @@ class FrameworkConfig:
         return self.analysis.analysis_fns
 
     @property
+    def post_job_fns(self) -> List[Tuple[Callable, Dict[str, Any]]]:
+        return self.analysis.post_job_fns
+
+    @property
     def objective_regex(self) -> str:
         return self.optimizer.objective_regex or self.output_regex
 
@@ -285,6 +291,31 @@ def _validate_analysis_fn(fn: Any) -> Callable:
     if not callable(fn):
         raise TypeError(f"analysis_fns entry must be callable, got {type(fn)}")
     return fn
+
+
+def _build_post_job_fns(
+    raw_entries: List[Any], hooks: Optional[ModuleType]
+) -> List[Tuple[Callable, Dict[str, Any]]]:
+    """Parse ``analysis.post_job_fns`` entries into ``(fn, kwargs)`` pairs.
+
+    Each entry is either a bare hook name (``- extract_xy_curve``, no extra
+    kwargs) or a mapping (``- {fn: extract_xy_curve, kwargs: {x_col: 0}}``)
+    carrying static keyword arguments forwarded to the hook on every call
+    (see :class:`~src.analysis.analysis_dispatcher.PostJobDispatcher`).
+    """
+    result: List[Tuple[Callable, Dict[str, Any]]] = []
+    for entry in raw_entries:
+        if isinstance(entry, dict):
+            name = entry.get("fn")
+            kwargs = dict(entry.get("kwargs") or {})
+        else:
+            name = entry
+            kwargs = {}
+        fn = _validate_analysis_fn(
+            _resolve_callable(hooks, name, "post_job_fns")
+        )
+        result.append((fn, kwargs))
+    return result
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -455,11 +486,15 @@ def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> FrameworkConfig:
         _validate_analysis_fn(_resolve_callable(hooks, fn_name, "analysis_fns"))
         for fn_name in (ana_raw.get("analysis_fns") or [])
     ]
+    post_job_fns = _build_post_job_fns(
+        list(ana_raw.get("post_job_fns") or []), hooks
+    )
     analysis = AnalysisSettings(
         plots_dir=Path(ana_raw.get("plots_dir", Path("results") / "plots")),
         sqlite_db=Path(ana_raw.get("sqlite_db", Path("results") / "results.db")),
         sqlite_table=str(ana_raw.get("sqlite_table", "results")),
         analysis_fns=analysis_fns,
+        post_job_fns=post_job_fns,
     )
 
     root = Path(scan.get("workspace", "sweep_workspace"))

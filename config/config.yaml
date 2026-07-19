@@ -122,6 +122,15 @@ analysis:
     - example_row_analysis
     - example_frame_analysis
     - example_sensitivity
+  # post_job_fns: called once per case dir right after that case's job
+  # completes (scan --wait, and every optimizer method except mcmc). Typical
+  # use: reduce a raw per-case file into the two-column (x, y) curve that
+  # optimizer.postprocess/curve_loss compares against experimental_data.
+  # Each entry may be a bare hook name or {fn: ..., kwargs: {...}} to pin
+  # extra static arguments (source filename, column indices, ...).
+  # post_job_fns:
+  #   - fn: extract_xy_curve
+  #     kwargs: {output_file: raw_output.dat, x_col: 0, y_col: 2, out_file: sim_curve.dat}
 
 # ── File pipeline (optional, declarative extra file gen/modification) ──────
 #   Runs once per case, after templates+input_fns, via utils.file_pipeline.

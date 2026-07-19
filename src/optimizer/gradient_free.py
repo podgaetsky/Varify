@@ -116,6 +116,7 @@ class NelderMeadOptimizer(BaseOptimizer):
             self.cfg.objective_regex,
             self.cfg.optimizer.job_timeout,
             self.cfg.optimizer.poll_interval,
+            params=params,
         )
         self._append_history(params, metric, str(case_dir), job_id)
         if not np.isfinite(metric):

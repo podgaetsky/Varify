@@ -12,7 +12,16 @@ Three kinds of hooks are supported:
 * analysis functions — registered under ``analysis.analysis_fns``; the
   dispatcher inspects the signature: functions declaring ``df``/``cfg`` (or
   ``**kwargs``) are called once with the full DataFrame pool, all others are
-  called once per valid result row with scalar kwargs.
+  called once per valid result row with scalar kwargs;
+* post-job functions — registered under ``analysis.post_job_fns``; each fn
+  is called once per case directory right after that case's job is
+  confirmed complete (see :class:`~src.analysis.analysis_dispatcher.
+  PostJobDispatcher`). Signature is introspected the same way as
+  ``analysis_fns``: declared params are pulled from a pool of ``case_dir``,
+  ``job_id``, ``output_file``, ``cfg`` and one scalar per case parameter,
+  plus any static ``kwargs:`` given alongside the hook name in config.yaml
+  (config kwargs win on conflict, e.g. to pin a source filename or column
+  index per hook).
 
 These examples are migrated unchanged from the legacy script.
 """
@@ -26,6 +35,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from varify.src.analysis.postprocess import load_xy, write_xy
 from varify.utils.file_pipeline import generate_config_file
 
 
@@ -114,3 +124,32 @@ def example_sensitivity(df: pd.DataFrame, cfg: Any) -> None:
             f"  [sensitivity] {name}: max|dOut/d{name}|={np.nanmax(sens):.4g}"
             f"  at {name}≈{x[np.nanargmax(sens) + 1]:.4g}"
         )
+
+
+# ── post-job functions ────────────────────────────────────────────────────────
+
+def extract_xy_curve(
+    case_dir: Path,
+    output_file: str = "output.dat",
+    x_col: int = 0,
+    y_col: int = 1,
+    out_file: str = "sim_curve.dat",
+    scale: float = 1.0,
+) -> None:
+    """Example post_job_fn: reduce a raw per-case simulation file into the
+    two-column ``(x, y)`` curve that ``optimizer.postprocess``/
+    :func:`~src.analysis.postprocess.curve_loss` compares against
+    ``optimizer.experimental_data``.
+
+    ``output_file``, ``x_col``, ``y_col``, ``out_file`` and ``scale`` are
+    all overridable per hook via ``analysis.post_job_fns[].kwargs`` in
+    config.yaml — e.g. to point at a different raw file or apply a unit
+    conversion before the curve is compared against experiment. Skips
+    silently if ``output_file`` doesn't exist yet (job failed / still
+    finishing writes).
+    """
+    src = case_dir / output_file
+    if not src.exists():
+        return
+    x, y = load_xy(src, x_col=x_col, y_col=y_col)
+    write_xy(case_dir / out_file, x, y * scale)

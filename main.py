@@ -27,9 +27,9 @@ import argparse
 import logging
 import sys
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Tuple
 
-from varify.src.analysis import AnalysisDispatcher, PlotSuite, ResultParser
+from varify.src.analysis import AnalysisDispatcher, PlotSuite, PostJobDispatcher, ResultParser
 from varify.src.common.config import FrameworkConfig, load_config
 from varify.src.optimizer import make_optimizer
 from varify.src.scanner import make_scanner
@@ -60,7 +60,7 @@ def run_scan(
         cfg.sweep_mode, cfg.swept_names or ["(none)"], total, dry_run, wait,
     )
     submitted = errors = 0
-    job_ids: List[str] = []
+    jobs: List[Tuple[str, Path, Dict[str, float]]] = []  # (job_id, case_dir, params)
     with SlurmDispatcher(cfg, dry_run=dry_run) as dispatcher:
         for i, gp in enumerate(scanner.iter_points(), 1):
             log.info("[%d/%d] %s", i, total, gp.case_dir_name)
@@ -68,12 +68,12 @@ def run_scan(
             job_id = dispatcher.dispatch(gp.job_name, case_dir, gp.params)
             if job_id is not None:
                 submitted += 1
-                job_ids.append(job_id)
+                jobs.append((job_id, case_dir, gp.params))
             else:
                 errors += 1
 
         if wait:
-            waitable = [jid for jid in job_ids if jid != "DRY_RUN"]
+            waitable = [jid for jid, _, _ in jobs if jid != "DRY_RUN"]
             if waitable:
                 log.info("Waiting for %d submitted job(s) to complete…",
                           len(waitable))
@@ -86,6 +86,12 @@ def run_scan(
                 failed = len(results) - completed
                 log.info("Batch complete: %d completed, %d failed/timed out",
                           completed, failed)
+
+                if cfg.post_job_fns:
+                    post_job = PostJobDispatcher(cfg)
+                    for job_id, case_dir, params in jobs:
+                        if job_id != "DRY_RUN" and results.get(job_id, False):
+                            post_job.run_case(case_dir, params, job_id)
             else:
                 log.info("Nothing to wait for (dry-run or no jobs submitted).")
 

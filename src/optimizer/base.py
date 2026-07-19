@@ -22,6 +22,7 @@ import pandas as pd
 
 from varify.src.common.casebuilder import CaseBuilder
 from varify.src.common.config import FrameworkConfig
+from varify.src.analysis.analysis_dispatcher import PostJobDispatcher
 from varify.src.analysis.parser import ResultParser
 from varify.src.analysis.postprocess import curve_loss
 from varify.src.slurm.dispatcher import SlurmDispatcher
@@ -35,6 +36,7 @@ class BaseOptimizer(ABC):
         self.dry_run = dry_run
         self.builder = CaseBuilder(cfg)
         self.parser = ResultParser(cfg)
+        self.post_job = PostJobDispatcher(cfg)
         self._log = logging.getLogger(f"varify.optimizer.{type(self).__name__}")
 
     # ── SLURM-facing evaluation primitives ────────────────────────────────────
@@ -61,6 +63,7 @@ class BaseOptimizer(ABC):
         poll_interval: float,
         job_id: Optional[str] = None,
         dispatcher: Optional[SlurmDispatcher] = None,
+        params: Optional[Dict[str, float]] = None,
     ) -> float:
         """Block until the output file appears, then parse the metric (NaN on
         timeout or parse failure).
@@ -71,6 +74,14 @@ class BaseOptimizer(ABC):
         terminal state (or scheduler timeout) short-circuits to NaN without
         bothering to poll for the output file. Omitting either argument
         preserves the previous output-file-only behavior.
+
+        Once the output file is confirmed present, any ``analysis.
+        post_job_fns`` are run against *case_dir* (see
+        :class:`~src.analysis.analysis_dispatcher.PostJobDispatcher`) before
+        the metric is computed — the usual reason being to reduce a raw
+        simulation file into the two-column curve ``postprocess`` below
+        reads. *params* is forwarded to those hooks as per-case scalar
+        kwargs; omit it only when the case has no parameters worth exposing.
 
         When ``cfg.optimizer.postprocess`` is enabled, the metric is instead
         the interpolated-curve loss against the configured experimental
@@ -89,6 +100,7 @@ class BaseOptimizer(ABC):
         if not ok:
             self._log.warning("Timed out waiting for output in %s", case_dir.name)
             return float("nan")
+        self.post_job.run_case(case_dir, params or {}, job_id)
         if self.cfg.optimizer.postprocess:
             return self._postprocess_case(case_dir)
         return self.parser.parse_case(case_dir, regex=regex)
